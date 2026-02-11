@@ -65,7 +65,7 @@ if "page" not in st.session_state:
     st.session_state.page = "Add Word"
 
 st.session_state.page = st.sidebar.radio(
-    "Go to",
+    "Lexicon Field Book",
     ["Add Word", "Lexicon", "Import / Export"],
     index=["Add Word", "Lexicon", "Import / Export"].index(st.session_state.page)
 )
