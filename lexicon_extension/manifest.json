@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Lexicon Quick Add",
+  "version": "0.1",
+  "description": "Add words to your personal Lexicon Field Book.",
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}
