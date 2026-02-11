@@ -208,4 +208,3 @@ elif page == "Settings":
     st.header("Settings")
     st.write("Future options: switch to SQLite backend, theme, larger fonts, and export defaults.")
     st.info("Data is saved locally on the server where this Streamlit app runs. If you deploy to Streamlit Cloud, consider per-user storage or a database for multi-user scenarios.")
-``
