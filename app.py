@@ -231,7 +231,7 @@ if not st.session_state.df.empty:
     st.write("Any real date_added present?", any(e.get("date_added") for e in st.session_state.entries))
     # ────────────────────────────────────────────────────────────────────────
 
-    if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
+if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
     if not selected_labels:
         st.warning("No entries selected.")
     else:
