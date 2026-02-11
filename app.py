@@ -1,18 +1,24 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from pathlib import Path
+import os, sys
+
+# Ensure src/ is importable
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 from src.storage_json import load_entries, save_entries
 from src.utils import normalize_timestamp
 
+
+# ---------------------- Page Config ----------------------
 st.set_page_config(
     page_title="Linguist Lexicon",
     page_icon="📘",
     layout="wide"
 )
 
-# ---------- State & Data ----------
+
+# ---------------------- Load Data ----------------------
 if "entries" not in st.session_state:
     st.session_state.entries = load_entries()
 
@@ -21,7 +27,55 @@ def refresh_table():
 
 refresh_table()
 
-# ---------- Sidebar Navigation ----------
+
+# ---------------------- Utility: sanitize entries ----------------------
+def df_to_entries(df: pd.DataFrame) -> list[dict]:
+    """Convert edited DataFrame rows into JSON‑serializable dicts."""
+    if df is None or df.empty:
+        return []
+
+    # Ensure expected columns exist
+    cols_defaults = {
+        "word": "",
+        "definition": "",
+        "notes": "",
+        "tags": [],
+        "source": "",
+        "timestamp": "",
+        "date_added": "",
+    }
+    for col, default in cols_defaults.items():
+        if col not in df.columns:
+            df[col] = default
+
+    # NA/NaN -> None
+    df = df.where(pd.notnull(df), None)
+
+    # Fix tags: ensure list[str]
+    def _fix_tags(v):
+        if isinstance(v, list):
+            return v
+        if v in (None, "", "[]"):
+            return []
+        s = str(v).strip()
+        if s.startswith("[") and s.endswith("]"):
+            # bracketed list format
+            return [t.strip(" '\"") for t in s[1:-1].split(",") if t.strip()]
+        return [t.strip() for t in s.split(",") if t.strip()]
+
+    df["tags"] = df["tags"].apply(_fix_tags)
+
+    # Coerce other fields to clean strings
+    for col in ["word", "definition", "notes", "source", "timestamp", "date_added"]:
+        df[col] = df[col].apply(lambda x: "" if x is None else str(x))
+
+    # Normalize timestamp formats
+    df["timestamp"] = df["timestamp"].apply(normalize_timestamp)
+
+    return df.to_dict(orient="records")
+
+
+# ---------------------- Sidebar ----------------------
 st.sidebar.title("📘 Linguist Lexicon")
 page = st.sidebar.radio(
     "Go to",
@@ -29,18 +83,24 @@ page = st.sidebar.radio(
     index=0
 )
 
-# ---------- Add Word ----------
+
+# ================================================================
+# ========================= ADD WORD =============================
+# ================================================================
 if page == "Add Word":
     st.header("Add a New Word")
+
     with st.form("add_word"):
-        cols = st.columns([2, 3])
-        with cols[0]:
+        col1, col2 = st.columns([2, 3])
+
+        with col1:
             word = st.text_input("Word", placeholder="e.g., glycolysis")
             tags = st.text_input("Tags (comma-separated)", placeholder="biology, exam")
             source = st.text_input("Source (optional)", placeholder="BIO101 Lecture 3")
-        with cols[1]:
-            definition = st.text_area("Definition", height=120, placeholder="Your definition or pasted from notes/textbook")
-            notes = st.text_area("Notes / Context", height=120, placeholder="Where you heard it, sentence used, mnemonic, etc.")
+
+        with col2:
+            definition = st.text_area("Definition", height=120)
+            notes = st.text_area("Notes / Context", height=120)
             timestamp = st.text_input("Timestamp (optional)", placeholder="00:12:30 or seconds")
 
         submitted = st.form_submit_button("➕ Add to Lexicon", use_container_width=True)
@@ -58,16 +118,20 @@ if page == "Add Word":
                 "timestamp": normalize_timestamp(timestamp),
                 "date_added": datetime.utcnow().isoformat(timespec="seconds") + "Z"
             }
+
             st.session_state.entries.append(entry)
             save_entries(st.session_state.entries)
             refresh_table()
             st.success(f"Added **{entry['word']}** to your Lexicon.")
 
-# ---------- Lexicon View ----------
+
+# ================================================================
+# ========================== LEXICON =============================
+# ================================================================
 elif page == "Lexicon":
     st.header("Your Lexicon")
 
-    # Filters
+    # ---------- Filters ----------
     colf = st.columns([2, 2, 2, 1])
     with colf[0]:
         query = st.text_input("Search word/definition/notes")
@@ -76,11 +140,11 @@ elif page == "Lexicon":
     with colf[2]:
         source_filter = st.text_input("Filter by source contains")
     with colf[3]:
-        sort_by = st.selectbox("Sort", ["word", "date_added"], index=0)
+        sort_by = st.selectbox("Sort", ["word", "date_added"])
 
     df = st.session_state.df.copy()
 
-    # Apply filters
+    # ---------- Apply filters ----------
     if not df.empty:
         if query:
             mask = (
@@ -89,14 +153,18 @@ elif page == "Lexicon":
                 df["notes"].str.contains(query, case=False, na=False)
             )
             df = df[mask]
+
         if tag_filter:
             df = df[df["tags"].apply(lambda ts: tag_filter.strip() in (ts or []))]
+
         if source_filter:
             df = df[df["source"].str.contains(source_filter, case=False, na=False)]
-        df = df.sort_values(by=sort_by, ascending=True, na_position="last").reset_index(drop=True)
 
-    # Editable table
-    st.caption("Tip: Double-click cells to edit. Use the ⛔ delete button per row.")
+        df = df.sort_values(by=sort_by).reset_index(drop=True)
+
+    # ---------- Editable Table ----------
+    st.caption("Tip: Double-click cells to edit. Use the delete section below to remove rows.")
+
     edited = st.data_editor(
         df,
         num_rows="dynamic",
@@ -113,39 +181,34 @@ elif page == "Lexicon":
         key="editor"
     )
 
-    # Persist edits
     if st.button("💾 Save Changes", type="primary"):
-        st.session_state.entries = edited.to_dict(orient="records")
+        st.session_state.entries = df_to_entries(edited)
         save_entries(st.session_state.entries)
         refresh_table()
         st.success("All changes saved.")
 
-    # Delete selected rows
+    # ---------- Row deletion ----------
     if not edited.empty:
         to_delete = st.multiselect("Select rows to delete", edited.index.tolist())
+
         if st.button("⛔ Delete Selected"):
-            st.session_state.entries = [
-                row for idx, row in edited.iterrows() if idx not in to_delete
-            ]
+            remaining = edited.drop(index=to_delete).reset_index(drop=True)
+            st.session_state.entries = df_to_entries(remaining)
             save_entries(st.session_state.entries)
             refresh_table()
-            st.success(f"Deleted {len(to_delete)} entr{'y' if len(to_delete)==1 else 'ies'}.")
+            st.success(f"Deleted {len(to_delete)} row(s).")
 
 
-# ---------- Settings ----------
-elif page == "Settings":
-    st.header("Settings")
-    st.write("Future options: switch to SQLite backend, theme, larger fonts, and export defaults.")
-    st.info("Data is saved locally on the server where this Streamlit app runs. If you deploy to Streamlit Cloud, consider per-user storage or a database for multi-user scenarios.")
-
-
-# ---------- Lexicon View ----------
+# ================================================================
+# ====================== IMPORT / EXPORT =========================
+# ================================================================
 elif page == "Import / Export":
     st.header("Import / Export")
 
-    # -------------------------- Export --------------------------
+    # ------------------ Export ------------------
     st.subheader("Export")
     c1, c2 = st.columns(2)
+
     with c1:
         if st.button("⬇️ Export JSON", use_container_width=True):
             st.download_button(
@@ -155,6 +218,7 @@ elif page == "Import / Export":
                 mime="application/json",
                 use_container_width=True
             )
+
     with c2:
         if st.button("⬇️ Export CSV", use_container_width=True):
             df = pd.DataFrame(st.session_state.entries)
@@ -166,11 +230,12 @@ elif page == "Import / Export":
                 use_container_width=True
             )
 
-    # -------------------------- Import JSON/CSV --------------------------
+    # ------------------ Import JSON / CSV ------------------
     st.divider()
     st.subheader("Import")
 
-    up_json = st.file_uploader("Import JSON (lexicon.json)", type=["json"], key="up_json")
+    # ---- Import JSON ----
+    up_json = st.file_uploader("Import JSON (lexicon.json)", type=["json"])
     if up_json and st.button("📤 Import JSON"):
         try:
             df = pd.read_json(up_json)
@@ -178,30 +243,21 @@ elif page == "Import / Export":
                 entries = df.to_dict(orient="records")
             else:
                 entries = list(df.values)
+
             st.session_state.entries.extend(entries)
             save_entries(st.session_state.entries)
             refresh_table()
             st.success(f"Imported {len(entries)} entries from JSON.")
+
         except Exception as e:
             st.error(f"Failed to import JSON: {e}")
 
-    up_csv = st.file_uploader("Import CSV (lexicon.csv)", type=["csv"], key="up_csv")
+    # ---- Import CSV ----
+    up_csv = st.file_uploader("Import CSV (lexicon.csv)", type=["csv"])
     if up_csv and st.button("📤 Import CSV"):
         try:
             df = pd.read_csv(up_csv)
-            defaults = {"definition":"", "notes":"", "tags":"[]", "source":"", "timestamp":"", "date_added":""}
-            for k,v in defaults.items():
-                if k not in df.columns:
-                    df[k] = v
-            def _safe_tags(x):
-                if isinstance(x, list):
-                    return x
-                s = str(x).strip()
-                if s.startswith("["):
-                    return [t.strip(" '\"") for t in s.strip("[]").split(",") if t.strip()]
-                return [t.strip() for t in s.split(",") if t.strip()]
-            df["tags"] = df["tags"].apply(_safe_tags)
-            entries = df.to_dict(orient="records")
+            entries = df_to_entries(df)
             st.session_state.entries.extend(entries)
             save_entries(st.session_state.entries)
             refresh_table()
@@ -209,14 +265,14 @@ elif page == "Import / Export":
         except Exception as e:
             st.error(f"Failed to import CSV: {e}")
 
-    # -------------------------- Import from Word (.docx) --------------------------
+    # ------------------ Import from Word (.docx) ------------------
     st.divider()
     st.subheader("Import from Word (.docx)")
-    st.caption("Two modes: (1) Glossary Table with headers like word/definition/... or (2) Free Text to harvest candidate words.")
+    st.caption("Works with (1) glossary tables or (2) free text paragraphs.")
 
-    docx_file = st.file_uploader("Upload a .docx file", type=["docx"], key="up_docx")
+    docx_file = st.file_uploader("Upload a .docx file", type=["docx"])
 
-    if docx_file is not None:
+    if docx_file:
         from src.docx_import import (
             load_docx,
             extract_tables_as_dicts,
@@ -225,66 +281,61 @@ elif page == "Import / Export":
             map_row_to_entry,
         )
 
-        default_c1, default_c2 = st.columns([1, 1])
-        with default_c1:
-            default_source = st.text_input("Default source (applied to imported entries)", value="")
-        with default_c2:
-            default_tags_str = st.text_input("Default tag(s), comma-separated", value="")
+        colA, colB = st.columns(2)
+        with colA:
+            default_source = st.text_input("Default source", value="")
+        with colB:
+            default_tags_str = st.text_input("Default tags (comma-separated)", value="")
+
         default_tags = [t.strip() for t in default_tags_str.split(",") if t.strip()]
 
         doc = load_docx(docx_file)
 
-        # --- Mode A: Tables (preferred if present) ---
+        # ---- Mode A: tables ----
         tables = extract_tables_as_dicts(doc)
-        imported_rows = 0
-
         if tables:
-            st.write("### Detected Tables")
+            st.write("### Tables detected")
             for idx, rows in enumerate(tables, start=1):
-                st.markdown(f"**Table {idx}** — {len(rows)} row(s)")
-                preview = rows[:5] if len(rows) > 5 else rows
-                st.json(preview)
+                st.markdown(f"**Table {idx}** ({len(rows)} rows)")
+                st.json(rows[:5])
 
             if st.button("📥 Import from Tables"):
                 new_entries = []
                 for rows in tables:
-                    for row in rows:
-                        entry = map_row_to_entry(row, default_tags=default_tags, default_source=default_source)
+                    for r in rows:
+                        entry = map_row_to_entry(
+                            r, default_tags=default_tags, default_source=default_source
+                        )
                         if entry["word"]:
                             new_entries.append(entry)
 
-                existing_words = {(e.get("word") or "").lower() for e in st.session_state.entries}
-                new_entries = [e for e in new_entries if (e["word"] or "").lower() not in existing_words]
+                # Eliminate duplicates (case-insensitive)
+                existing = {(e["word"] or "").lower() for e in st.session_state.entries}
+                new_entries = [
+                    e for e in new_entries if e["word"].lower() not in existing
+                ]
 
-                if new_entries:
-                    st.session_state.entries.extend(new_entries)
-                    save_entries(st.session_state.entries)
-                    refresh_table()
-                    st.success(f"Imported {len(new_entries)} entr{'y' if len(new_entries)==1 else 'ies'} from tables.")
-                    imported_rows += len(new_entries)
-                else:
-                    st.info("No new entries were added (duplicates or empty words).")
+                st.session_state.entries.extend(new_entries)
+                save_entries(st.session_state.entries)
+                refresh_table()
+                st.success(f"Imported {len(new_entries)} entries from tables.")
 
-        # --- Mode B: Free text (paragraphs) ---
+        # ---- Mode B: free text ----
         text = extract_plain_text(doc)
-        if text and st.checkbox("Use Free Text Mode (parse paragraphs for candidate words)", value=not bool(tables)):
-            st.text_area("Extracted text (preview)", value=text[:2000] + ("..." if len(text) > 2000 else ""), height=200)
+        if st.checkbox("Use Free Text Mode", value=not bool(tables)):
+            st.text_area("Extracted text (preview)", text[:2000] + ("..." if len(text) > 2000 else ""), height=200)
 
-            cands = candidate_words_from_text(text)
-            st.write(f"Found **{len(cands)}** unique candidate word(s).")
+            words = candidate_words_from_text(text)
+            existing = {(e["word"] or "").lower() for e in st.session_state.entries}
+            fresh = [w for w in words if w.lower() not in existing]
 
-            existing_words = {(e.get("word") or "").lower() for e in st.session_state.entries}
-            fresh = [w for w in cands if w.lower() not in existing_words]
-            st.write(f"New (non-duplicate) candidates: **{len(fresh)}**")
+            selected = st.multiselect("Select words to import", fresh, default=fresh[:20])
 
-            selected = st.multiselect("Select words to import", options=fresh, default=fresh[:30])
+            notes_default = st.text_input("Default notes (optional)", value="")
 
-            notes_default = st.text_input("Default notes (optional, applied to selected words)", value="")
             if st.button("📥 Import Selected Words"):
-                from datetime import datetime
-                batch = []
-                for w in selected:
-                    entry = {
+                batch = [
+                    {
                         "word": w,
                         "definition": "",
                         "notes": notes_default,
@@ -293,9 +344,19 @@ elif page == "Import / Export":
                         "timestamp": "",
                         "date_added": datetime.utcnow().isoformat(timespec="seconds") + "Z",
                     }
-                    batch.append(entry)
-                if batch:
-                    st.session_state.entries.extend(batch)
-                    save_entries(st.session_state.entries)
-                    refresh_table()
-                    st.success(f"Imported {len(batch)} entr{'y' if len(batch)==1 else 'ies'} from free text.")    
+                    for w in selected
+                ]
+
+                st.session_state.entries.extend(batch)
+                save_entries(st.session_state.entries)
+                refresh_table()
+                st.success(f"Imported {len(batch)} entries from free text.")
+
+
+# ================================================================
+# =========================== SETTINGS ===========================
+# ================================================================
+elif page == "Settings":
+    st.header("Settings")
+    st.info("Your Lexicon data is saved on the server filesystem.\n"
+            "For Streamlit Cloud, consider SQLite or per-user storage if needed.")
