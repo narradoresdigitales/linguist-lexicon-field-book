@@ -415,5 +415,21 @@ elif page == "Import / Export":
 # ================================================================
 elif page == "Settings":
     st.header("Settings")
+
+    st.subheader("Appearance")
+    st.markdown("""
+    - **Dark/Light mode**: Use the menu in the top-right (⋮ → Settings → Theme) to switch between Light, Dark, or System preference.
+    - **Font size**: Increased globally for better readability (edit `.streamlit/config.toml` to adjust `baseFontSize`).
+    """)
+
+    # Optional toggle button (mostly informational)
+    if st.button("I prefer Dark Mode"):
+        st.info("Switch to Dark via the app menu (⋮ → Settings → Theme → Dark). Changes apply instantly!")
+
+    st.subheader("Data")
     st.info("Your Lexicon data is saved on the server filesystem.\n"
             "For Streamlit Cloud, consider SQLite or per-user storage if needed.")
+
+    # Future expansion space
+    st.subheader("Other preferences")
+    st.write("(More options coming soon...)")
