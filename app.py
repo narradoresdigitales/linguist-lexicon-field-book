@@ -188,95 +188,88 @@ elif page == "Lexicon":
         st.success("All changes saved.")
 
     # ---------- Row deletion ----------
-# ---------- Row deletion (fixed for Streamlit rerun behavior) ----------
-# ---------- Row deletion ----------
 # ---------- Row deletion ----------
 st.subheader("Delete entries")
 
 if not st.session_state.df.empty:
-    # Optional: show current table for reference
     st.caption("Current lexicon (for reference):")
     st.dataframe(st.session_state.df[["word", "definition", "tags", "date_added"]])
 
-    # Build display options using date_added + word preview
     options = [
         f"{row.get('date_added', 'MISSING_DATE')} | {row['word'][:40]}"
         for _, row in st.session_state.df.iterrows()
     ]
 
-    # Initialize session state for selection persistence
     if "delete_selection" not in st.session_state:
         st.session_state.delete_selection = []
 
     selected_labels = st.multiselect(
-        "Select entries to delete (date | word preview)",
+        "Select entries to delete (shows date | word preview)",
         options=options,
         default=st.session_state.delete_selection,
         key="delete_multiselect"
     )
 
-    # ── Debug output ── now safe because it comes AFTER multiselect ────────
-    st.write("DEBUG: Total entries:", len(st.session_state.entries))
-    st.write("DEBUG: Selected labels:", selected_labels)
-    
-    # Show what dates we would try to delete
-    to_delete_dates_preview = []
+    # ── All debug output MUST come AFTER the multiselect ─────────────────────
+    st.markdown("**Diagnostic (remove later):**")
+    st.write("Total entries right now:", len(st.session_state.entries))
+    st.write("Selected items:", selected_labels)
+
+    # Show what dates would actually be targeted
+    targeted_dates = []
     for label in selected_labels:
         try:
-            date_part = label.split(" | ")[0].strip()
-            to_delete_dates_preview.append(date_part)
+            date_part = label.split(" | ", 1)[0].strip()
+            targeted_dates.append(date_part if date_part else "EMPTY_STRING")
         except:
-            to_delete_dates_preview.append("PARSE_ERROR")
-    st.write("DEBUG: Dates that would be targeted:", to_delete_dates_preview)
+            targeted_dates.append("PARSE_FAILED")
+    st.write("Targeted date_added values:", targeted_dates)
 
-    # Show actual date_added values in data
-    sample_dates = [e.get("date_added", "MISSING") for e in st.session_state.entries[:6]]
-    st.write("DEBUG: First 6 date_added in entries:", sample_dates)
-    # ───────────────────────────────────────────────────────────────────────
+    # Show real data state
+    sample_dates = [e.get("date_added", "—missing—") for e in st.session_state.entries[:5]]
+    st.write("First 5 date_added in storage:", sample_dates)
+    st.write("Any real date_added present?", any(e.get("date_added") for e in st.session_state.entries))
+    # ────────────────────────────────────────────────────────────────────────
 
-st.markdown("**Quick diagnostic — look here after selecting:**")
-st.write("Selected items:", selected_labels)
-st.write("Number of entries right now:", len(st.session_state.entries))
-st.write("First few date_added values:", 
-         [e.get("date_added", "—missing—") for e in st.session_state.entries[:4]])
-st.write("Any entries with date_added?", 
-         any("date_added" in e and e["date_added"] for e in st.session_state.entries))
-
-if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
-    if not selected_labels:
-        st.warning("No entries selected.")
-    else:
-        to_delete_dates = set()
-        for label in selected_labels:
-            parts = label.split(" | ", 1)  # split only once
-            if len(parts) >= 1:
-                date_str = parts[0].strip()
-                if date_str and date_str != "MISSING_DATE" and date_str != "":
-                    to_delete_dates.add(date_str)
-
-        if not to_delete_dates:
-            st.error("No valid date_added could be extracted from the selected items.\n"
-                     "Most likely your imported entries are missing the date_added field.\n"
-                     "→ Nothing was deleted for safety.")
+    if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
+        if not selected_labels:
+            st.warning("No entries selected.")
         else:
-            before = len(st.session_state.entries)
+            to_delete_dates = set()
+            for label in selected_labels:
+                try:
+                    date_part = label.split(" | ", 1)[0].strip()
+                    if date_part and date_part not in {"MISSING_DATE", ""}:
+                        to_delete_dates.add(date_part)
+                except:
+                    pass
 
-            # Keep entry UNLESS it has date_added AND that date is in the delete set
-            st.session_state.entries = [
-                e for e in st.session_state.entries
-                if not (e.get("date_added") and e["date_added"] in to_delete_dates)
-            ]
-
-            deleted = before - len(st.session_state.entries)
-
-            save_entries(st.session_state.entries)
-            refresh_table()
-            st.session_state.delete_selection = []
-
-            if deleted == 0:
-                st.warning("No entries were deleted — possibly no matching date_added found.")
+            if not to_delete_dates:
+                st.error(
+                    "No valid date_added could be extracted from your selection.\n"
+                    "This usually means the imported entries are missing the 'date_added' field.\n"
+                    "→ Nothing was deleted to prevent data loss."
+                )
             else:
-                st.success(f"Deleted {deleted} entr{'y' if deleted == 1 else 'ies'}.")   
+                before = len(st.session_state.entries)
+
+                # Safest keep condition: only remove entries that HAVE date_added AND it matches
+                st.session_state.entries = [
+                    e for e in st.session_state.entries
+                    if not (e.get("date_added") and e["date_added"] in to_delete_dates)
+                ]
+
+                deleted = before - len(st.session_state.entries)
+
+                save_entries(st.session_state.entries)
+                refresh_table()
+                st.session_state.delete_selection = []
+
+                if deleted == 0:
+                    st.warning("No matching entries found — nothing deleted.")
+                else:
+                    st.success(f"Deleted **{deleted}** entr{'y' if deleted == 1 else 'ies'}.")
+
 
 
 # ================================================================
