@@ -231,33 +231,50 @@ if not st.session_state.df.empty:
     st.write("Any real date_added present?", any(e.get("date_added") for e in st.session_state.entries))
     # ────────────────────────────────────────────────────────────────────────
 
-if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
-    if not selected_labels:
-        st.warning("No entries selected.")
-    else:
-        st.info("Safe mode: showing what would be deleted (nothing actually deleted yet)")
+    if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
+        if not selected_labels:
+            st.warning("No entries selected.")
+        else:
+            # Extract indices from the displayed options
+            indices_to_delete = []
+            for label in selected_labels:
+                # The options are built from df.iterrows() → index is preserved in order
+                # But safer: find matching row by word + date preview
+                try:
+                    date_part, word_part = label.split(" | ", 1)
+                    word_part = word_part.strip()
+                    # Find rows that match this preview
+                    matching = st.session_state.df[
+                        (st.session_state.df['word'].str.startswith(word_part)) &
+                        (st.session_state.df.get('date_added', pd.NA).astype(str).str.contains(date_part, na=False))
+                    ]
+                    indices_to_delete.extend(matching.index.tolist())
+                except:
+                    pass
 
-        targeted = []
-        for label in selected_labels:
-            try:
-                date_str = label.split(" | ", 1)[0].strip()
-                targeted.append(date_str if date_str else "[empty]")
-            except:
-                targeted.append("[parse failed]")
+            if not indices_to_delete:
+                st.error("Could not match selected labels to rows — nothing deleted.")
+            else:
+                indices_to_delete = sorted(set(indices_to_delete))  # unique & ordered
+                st.info(f"Would delete {len(indices_to_delete)} row(s) by index")
 
-        st.write("Would target these date_added values:", targeted)
+                # Show which words would be affected
+                words = st.session_state.df.loc[indices_to_delete, 'word'].tolist()
+                st.write("Words to be deleted:", words)
 
-        # Show how many entries actually have each targeted date
-        from collections import Counter
-        all_dates = [e.get("date_added", "[missing]") for e in st.session_state.entries]
-        count_by_date = Counter(all_dates)
+                # If you're sure → uncomment the next block
+                # before = len(st.session_state.entries)
+                # st.session_state.entries = [
+                #     e for i, e in enumerate(st.session_state.entries)
+                #     if i not in indices_to_delete   # but careful: indices are from df, not entries!
+                # ]
+                # deleted = before - len(st.session_state.entries)
+                # save_entries(st.session_state.entries)
+                # refresh_table()
+                # st.session_state.delete_selection = []
+                # st.success(f"Deleted {deleted} entr{'y' if deleted == 1 else 'ies'}.")
 
-        for t in targeted:
-            matches = count_by_date.get(t, 0)
-            st.write(f"→ '{t}' matches **{matches}** entries in your lexicon")
-
-        # Deliberately do NOT modify entries here yet
-        st.warning("No deletion performed — check the counts above. Tell me what you see.")
+                st.warning("Safe mode still active — deletion commented out. Tell me if the words look correct.")
 
 
 
