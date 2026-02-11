@@ -232,43 +232,32 @@ if not st.session_state.df.empty:
     # ────────────────────────────────────────────────────────────────────────
 
     if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
-        if not selected_labels:
-            st.warning("No entries selected.")
-        else:
-            to_delete_dates = set()
-            for label in selected_labels:
-                try:
-                    date_part = label.split(" | ", 1)[0].strip()
-                    if date_part and date_part not in {"MISSING_DATE", ""}:
-                        to_delete_dates.add(date_part)
-                except:
-                    pass
+    if not selected_labels:
+        st.warning("No entries selected.")
+    else:
+        st.info("Safe mode: showing what would be deleted (nothing actually deleted yet)")
 
-            if not to_delete_dates:
-                st.error(
-                    "No valid date_added could be extracted from your selection.\n"
-                    "This usually means the imported entries are missing the 'date_added' field.\n"
-                    "→ Nothing was deleted to prevent data loss."
-                )
-            else:
-                before = len(st.session_state.entries)
+        targeted = []
+        for label in selected_labels:
+            try:
+                date_str = label.split(" | ", 1)[0].strip()
+                targeted.append(date_str if date_str else "[empty]")
+            except:
+                targeted.append("[parse failed]")
 
-                # Safest keep condition: only remove entries that HAVE date_added AND it matches
-                st.session_state.entries = [
-                    e for e in st.session_state.entries
-                    if not (e.get("date_added") and e["date_added"] in to_delete_dates)
-                ]
+        st.write("Would target these date_added values:", targeted)
 
-                deleted = before - len(st.session_state.entries)
+        # Show how many entries actually have each targeted date
+        from collections import Counter
+        all_dates = [e.get("date_added", "[missing]") for e in st.session_state.entries]
+        count_by_date = Counter(all_dates)
 
-                save_entries(st.session_state.entries)
-                refresh_table()
-                st.session_state.delete_selection = []
+        for t in targeted:
+            matches = count_by_date.get(t, 0)
+            st.write(f"→ '{t}' matches **{matches}** entries in your lexicon")
 
-                if deleted == 0:
-                    st.warning("No matching entries found — nothing deleted.")
-                else:
-                    st.success(f"Deleted **{deleted}** entr{'y' if deleted == 1 else 'ies'}.")
+        # Deliberately do NOT modify entries here yet
+        st.warning("No deletion performed — check the counts above. Tell me what you see.")
 
 
 
