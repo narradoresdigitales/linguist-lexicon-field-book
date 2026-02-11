@@ -188,15 +188,34 @@ elif page == "Lexicon":
         st.success("All changes saved.")
 
     # ---------- Row deletion ----------
-    if not edited.empty:
-        to_delete = st.multiselect("Select rows to delete", edited.index.tolist())
+# ---------- Row deletion (fixed for Streamlit rerun behavior) ----------
+if not edited.empty:
 
-        if st.button("⛔ Delete Selected"):
-            remaining = edited.drop(index=to_delete).reset_index(drop=True)
-            st.session_state.entries = df_to_entries(remaining)
-            save_entries(st.session_state.entries)
-            refresh_table()
-            st.success(f"Deleted {len(to_delete)} row(s).")
+    # Persist the selected rows across reruns
+    if "selected_rows" not in st.session_state:
+        st.session_state.selected_rows = []
+
+    # Multiselect -> store result
+    selected = st.multiselect(
+        "Select rows to delete",
+        edited.index.tolist(),
+        default=st.session_state.selected_rows,
+        key="row_selector"
+    )
+
+    # Keep session state updated
+    st.session_state.selected_rows = selected
+
+    # Delete button
+    if st.button("⛔ Delete Selected", key="delete_rows_btn"):
+        remaining = edited.drop(index=st.session_state.selected_rows).reset_index(drop=True)
+        st.session_state.entries = df_to_entries(remaining)
+        save_entries(st.session_state.entries)
+        refresh_table()
+
+        deleted_count = len(st.session_state.selected_rows)
+        st.session_state.selected_rows = []  # clear after delete
+        st.success(f"Deleted {deleted_count} row(s).")   
 
 
 # ================================================================
