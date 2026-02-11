@@ -76,7 +76,7 @@ def df_to_entries(df: pd.DataFrame) -> list[dict]:
 
 
 # ---------------------- Sidebar ----------------------
-st.sidebar.title("📘 Linguist Lexicon")
+st.sidebar.title("📘 Lexicon Field Book")
 page = st.sidebar.radio(
     "Go to",
     ["Add Word", "Lexicon", "Import / Export"],
