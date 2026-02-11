@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os, sys
+import json
 
 # Ensure src/ is importable
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
-
 from src.storage_json import load_entries, save_entries
 from src.utils import normalize_timestamp
-
 
 # ---------------------- Page Config ----------------------
 st.set_page_config(
@@ -16,7 +15,6 @@ st.set_page_config(
     page_icon="📘",
     layout="wide"
 )
-
 
 # ---------------------- Load Data ----------------------
 if "entries" not in st.session_state:
@@ -27,31 +25,22 @@ def refresh_table():
 
 refresh_table()
 
-
 # ---------------------- Utility: sanitize entries ----------------------
 def df_to_entries(df: pd.DataFrame) -> list[dict]:
-    """Convert edited DataFrame rows into JSON‑serializable dicts."""
+    """Convert edited DataFrame rows into JSON-serializable dicts."""
     if df is None or df.empty:
         return []
 
-    # Ensure expected columns exist
     cols_defaults = {
-        "word": "",
-        "definition": "",
-        "notes": "",
-        "tags": [],
-        "source": "",
-        "timestamp": "",
-        "date_added": "",
+        "word": "", "definition": "", "notes": "", "tags": [],
+        "source": "", "timestamp": "", "date_added": ""
     }
     for col, default in cols_defaults.items():
         if col not in df.columns:
             df[col] = default
 
-    # NA/NaN -> None
     df = df.where(pd.notnull(df), None)
 
-    # Fix tags: ensure list[str]
     def _fix_tags(v):
         if isinstance(v, list):
             return v
@@ -59,30 +48,28 @@ def df_to_entries(df: pd.DataFrame) -> list[dict]:
             return []
         s = str(v).strip()
         if s.startswith("[") and s.endswith("]"):
-            # bracketed list format
             return [t.strip(" '\"") for t in s[1:-1].split(",") if t.strip()]
         return [t.strip() for t in s.split(",") if t.strip()]
 
     df["tags"] = df["tags"].apply(_fix_tags)
 
-    # Coerce other fields to clean strings
     for col in ["word", "definition", "notes", "source", "timestamp", "date_added"]:
         df[col] = df[col].apply(lambda x: "" if x is None else str(x))
 
-    # Normalize timestamp formats
     df["timestamp"] = df["timestamp"].apply(normalize_timestamp)
 
     return df.to_dict(orient="records")
 
-
 # ---------------------- Sidebar ----------------------
-st.sidebar.title("📘 Lexicon Field Book")
-page = st.sidebar.radio(
+if "page" not in st.session_state:
+    st.session_state.page = "Add Word"
+
+st.session_state.page = st.sidebar.radio(
     "Go to",
     ["Add Word", "Lexicon", "Import / Export"],
-    index=0
+    index=["Add Word", "Lexicon", "Import / Export"].index(st.session_state.page)
 )
-
+page = st.session_state.page
 
 # ================================================================
 # ========================= ADD WORD =============================
@@ -92,12 +79,10 @@ if page == "Add Word":
 
     with st.form("add_word"):
         col1, col2 = st.columns([2, 3])
-
         with col1:
             word = st.text_input("Word", placeholder="e.g., glycolysis")
             tags = st.text_input("Tags (comma-separated)", placeholder="biology, exam")
             source = st.text_input("Source (optional)", placeholder="BIO101 Lecture 3")
-
         with col2:
             definition = st.text_area("Definition", height=120)
             notes = st.text_area("Notes / Context", height=120)
@@ -118,12 +103,10 @@ if page == "Add Word":
                 "timestamp": normalize_timestamp(timestamp),
                 "date_added": datetime.utcnow().isoformat(timespec="seconds") + "Z"
             }
-
             st.session_state.entries.append(entry)
             save_entries(st.session_state.entries)
             refresh_table()
             st.success(f"Added **{entry['word']}** to your Lexicon.")
-
 
 # ================================================================
 # ========================== LEXICON =============================
@@ -144,7 +127,6 @@ elif page == "Lexicon":
 
     df = st.session_state.df.copy()
 
-    # ---------- Apply filters ----------
     if not df.empty:
         if query:
             mask = (
@@ -188,73 +170,52 @@ elif page == "Lexicon":
         st.success("All changes saved.")
 
     # ---------- Row deletion ----------
-# ---------- Row deletion ----------
     st.subheader("Delete entries")
+    if not st.session_state.df.empty:
+        st.caption("Current lexicon (for reference):")
+        st.dataframe(st.session_state.df[["word", "definition", "tags", "date_added"]])
 
-if not st.session_state.df.empty:
-    st.caption("Current lexicon (for reference):")
-    st.dataframe(st.session_state.df[["word", "definition", "tags", "date_added"]])
+        options = [
+            f"{row.get('date_added', 'MISSING_DATE')} | {row['word'][:40]}"
+            for _, row in st.session_state.df.iterrows()
+        ]
 
-    options = [
-        f"{row.get('date_added', 'MISSING_DATE')} | {row['word'][:40]}"
-        for _, row in st.session_state.df.iterrows()
-    ]
+        if "delete_selection" not in st.session_state:
+            st.session_state.delete_selection = []
 
-    if "delete_selection" not in st.session_state:
-        st.session_state.delete_selection = []
+        selected_labels = st.multiselect(
+            "Select entries to delete (shows date | word preview)",
+            options=options,
+            default=st.session_state.delete_selection,
+            key="delete_multiselect"
+        )
 
-    selected_labels = st.multiselect(
-        "Select entries to delete (shows date | word preview)",
-        options=options,
-        default=st.session_state.delete_selection,
-        key="delete_multiselect"
-    )
-
-    
-    # ────────────────────────────────────────────────────────────────────────
-
-    if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
-        if not selected_labels:
-            st.warning("No entries selected.")
-        else:
-            # Extract indices from the displayed options
-            indices_to_delete = []
-            for label in selected_labels:
-                try:
-                    date_part, word_part = label.split(" | ", 1)
-                    word_part = word_part.strip()
-                    # Match on word start + date contains (handles MISSING_DATE too)
-                    matching = st.session_state.df[
-                        (st.session_state.df['word'].str.startswith(word_part, na=False)) &
-                        (st.session_state.df.get('date_added', pd.NA).astype(str).str.contains(date_part, na=False))
-                    ]
-                    indices_to_delete.extend(matching.index.tolist())
-                except Exception as e:
-                    st.write("Debug: match error for label:", label, str(e))
-
-            if not indices_to_delete:
-                st.error("Could not match selected labels back to rows — nothing deleted.")
+        if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
+            if not selected_labels:
+                st.warning("No entries selected.")
             else:
-                indices_to_delete = sorted(set(indices_to_delete))  # unique, ordered
-                before = len(st.session_state.entries)
+                indices_to_delete = []
+                for label in selected_labels:
+                    try:
+                        date_part, word_part = label.split(" | ", 1)
+                        word_part = word_part.strip()
+                        matching = st.session_state.df[
+                            (st.session_state.df['word'].str.startswith(word_part, na=False)) &
+                            (st.session_state.df.get('date_added', pd.NA).astype(str).str.contains(date_part, na=False))
+                        ]
+                        indices_to_delete.extend(matching.index.tolist())
+                    except Exception as e:
+                        st.write("Debug: match error for label:", label, str(e))
 
-                # Show preview before deleting
-                words = st.session_state.df.loc[indices_to_delete, 'word'].tolist()
-                st.write("Deleting these words:", words)
-
-                # Actual deletion — remove by index in the current df order
-                # (Important: we drop from df first, then rebuild entries from remaining df)
-                remaining_df = st.session_state.df.drop(indices_to_delete)
-                st.session_state.entries = df_to_entries(remaining_df)
-
-                deleted = before - len(st.session_state.entries)
-
-                save_entries(st.session_state.entries)
-                refresh_table()
-                st.session_state.delete_selection = []
-
-                st.success(f"Deleted **{deleted}** entr{'y' if deleted == 1 else 'ies'} successfully.")
-
+                if indices_to_delete:
+                    remaining_df = st.session_state.df.drop(sorted(set(indices_to_delete)))
+                    st.session_state.entries = df_to_entries(remaining_df)
+                    save_entries(st.session_state.entries)
+                    refresh_table()
+                    st.session_state.delete_selection = []
+                    st.success(f"Deleted {len(indices_to_delete)} entr{'y' if len(indices_to_delete)==1 else 'ies'} successfully.")
+                else:
+                    st.error("Could not match selected labels back to rows — nothing deleted.")
 
 # ================================================================
 # ====================== IMPORT / EXPORT =========================
@@ -263,32 +224,24 @@ elif page == "Import / Export":
     st.header("Import / Export")
 
     # ------------------ Export ------------------
-# ------------------ Export ------------------
     st.subheader("Export")
+    df = pd.DataFrame(st.session_state.entries)
 
-    if st.session_state.entries:
-        import json
-        df = pd.DataFrame(st.session_state.entries)
+    st.download_button(
+        label="⬇️ Download JSON",
+        data=json.dumps(st.session_state.entries, indent=2),
+        file_name="lexicon.json",
+        mime="application/json",
+        key="download_json"
+    )
 
-        st.download_button(
-            label="⬇️ Download JSON",
-            data=json.dumps(st.session_state.entries, indent=2),
-            file_name="lexicon.json",
-            mime="application/json",
-            key="download_json"
-        )
-
-        st.download_button(
-            label="⬇️ Download CSV",
-            data=df.to_csv(index=False).encode("utf-8"),
-            file_name="lexicon.csv",
-            mime="text/csv",
-            key="download_csv"
-        )
-    else:
-        st.info("No entries available to export.")
-
-
+    st.download_button(
+        label="⬇️ Download CSV",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="lexicon.csv",
+        mime="text/csv",
+        key="download_csv"
+    )
 
     # ------------------ Import JSON / CSV ------------------
     st.divider()
@@ -299,16 +252,11 @@ elif page == "Import / Export":
     if up_json and st.button("📤 Import JSON"):
         try:
             df = pd.read_json(up_json)
-            if isinstance(df, pd.DataFrame):
-                entries = df.to_dict(orient="records")
-            else:
-                entries = list(df.values)
-
+            entries = df.to_dict(orient="records") if isinstance(df, pd.DataFrame) else list(df.values)
             st.session_state.entries.extend(entries)
             save_entries(st.session_state.entries)
             refresh_table()
             st.success(f"Imported {len(entries)} entries from JSON.")
-
         except Exception as e:
             st.error(f"Failed to import JSON: {e}")
 
@@ -329,16 +277,12 @@ elif page == "Import / Export":
     st.divider()
     st.subheader("Import from Word (.docx)")
     st.caption("Works with (1) glossary tables or (2) free text paragraphs.")
-
     docx_file = st.file_uploader("Upload a .docx file", type=["docx"])
 
     if docx_file:
         from src.docx_import import (
-            load_docx,
-            extract_tables_as_dicts,
-            extract_plain_text,
-            candidate_words_from_text,
-            map_row_to_entry,
+            load_docx, extract_tables_as_dicts, extract_plain_text,
+            candidate_words_from_text, map_row_to_entry
         )
 
         colA, colB = st.columns(2)
@@ -348,7 +292,6 @@ elif page == "Import / Export":
             default_tags_str = st.text_input("Default tags (comma-separated)", value="")
 
         default_tags = [t.strip() for t in default_tags_str.split(",") if t.strip()]
-
         doc = load_docx(docx_file)
 
         # ---- Mode A: tables ----
@@ -363,17 +306,12 @@ elif page == "Import / Export":
                 new_entries = []
                 for rows in tables:
                     for r in rows:
-                        entry = map_row_to_entry(
-                            r, default_tags=default_tags, default_source=default_source
-                        )
+                        entry = map_row_to_entry(r, default_tags=default_tags, default_source=default_source)
                         if entry["word"]:
                             new_entries.append(entry)
 
-                # Eliminate duplicates (case-insensitive)
-                existing = {(e["word"] or "").lower() for e in st.session_state.entries}
-                new_entries = [
-                    e for e in new_entries if e["word"].lower() not in existing
-                ]
+                existing = {e["word"].lower() for e in st.session_state.entries}
+                new_entries = [e for e in new_entries if e["word"].lower() not in existing]
 
                 st.session_state.entries.extend(new_entries)
                 save_entries(st.session_state.entries)
@@ -384,35 +322,22 @@ elif page == "Import / Export":
         text = extract_plain_text(doc)
         if st.checkbox("Use Free Text Mode", value=not bool(tables)):
             st.text_area("Extracted text (preview)", text[:2000] + ("..." if len(text) > 2000 else ""), height=200)
-
             words = candidate_words_from_text(text)
-            existing = {(e["word"] or "").lower() for e in st.session_state.entries}
+            existing = {e["word"].lower() for e in st.session_state.entries}
             fresh = [w for w in words if w.lower() not in existing]
 
             selected = st.multiselect("Select words to import", fresh, default=fresh[:20])
-
             notes_default = st.text_input("Default notes (optional)", value="")
 
             if st.button("📥 Import Selected Words"):
                 batch = [
                     {
-                        "word": w,
-                        "definition": "",
-                        "notes": notes_default,
-                        "tags": default_tags,
-                        "source": default_source,
-                        "timestamp": "",
-                        "date_added": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-                    }
-                    for w in selected
+                        "word": w, "definition": "", "notes": notes_default,
+                        "tags": default_tags, "source": default_source, "timestamp": "",
+                        "date_added": datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                    } for w in selected
                 ]
-
                 st.session_state.entries.extend(batch)
                 save_entries(st.session_state.entries)
                 refresh_table()
                 st.success(f"Imported {len(batch)} entries from free text.")
-
-
-# ================================================================
-# =========================== SETTINGS ===========================
-# ================================================================
