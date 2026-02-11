@@ -192,6 +192,18 @@ elif page == "Lexicon":
 # ---------- Row deletion ----------
 st.subheader("Delete entries")
 
+#debugging
+# ── debug ────────────────────────────────────────────────
+st.write("DEBUG: Entries before delete:", len(st.session_state.entries))
+st.write("DEBUG: Selected labels:", selected_labels)
+st.write("DEBUG: Extracted to_delete_dates:", list(to_delete_dates))
+
+# Show a few entries' date_added
+sample_dates = [e.get("date_added", "MISSING") for e in st.session_state.entries[:5]]
+st.write("DEBUG: First 5 date_added values:", sample_dates)
+# ─────────────────────────────────────────────────────────
+
+
 if not st.session_state.df.empty:
     # Show current table for reference (optional but helpful)
     st.caption("Current lexicon (for reference):")
