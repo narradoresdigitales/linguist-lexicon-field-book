@@ -189,7 +189,7 @@ elif page == "Lexicon":
 
     # ---------- Row deletion ----------
 # ---------- Row deletion ----------
-st.subheader("Delete entries")
+    st.subheader("Delete entries")
 
 if not st.session_state.df.empty:
     st.caption("Current lexicon (for reference):")
