@@ -267,25 +267,25 @@ elif page == "Import / Export":
     c1, c2 = st.columns(2)
 
     with c1:
-        if st.button("⬇️ Export JSON", use_container_width=True):
-            st.download_button(
-                "Download JSON",
-                data=pd.Series(st.session_state.entries).to_json(orient="values"),
-                file_name="lexicon.json",
-                mime="application/json",
-                use_container_width=True
-            )
+    st.download_button(
+        "⬇️ Download JSON",
+        data=pd.Series(st.session_state.entries).to_json(orient="values"),
+        file_name="lexicon.json",
+        mime="application/json",
+        use_container_width=True
+    )
+
 
     with c2:
-        if st.button("⬇️ Export CSV", use_container_width=True):
-            df = pd.DataFrame(st.session_state.entries)
-            st.download_button(
-                "Download CSV",
-                data=df.to_csv(index=False).encode("utf-8"),
-                file_name="lexicon.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+    df = pd.DataFrame(st.session_state.entries)
+    st.download_button(
+        "⬇️ Download CSV",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="lexicon.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
 
     # ------------------ Import JSON / CSV ------------------
     st.divider()
