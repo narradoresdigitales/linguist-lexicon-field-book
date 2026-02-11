@@ -210,25 +210,7 @@ if not st.session_state.df.empty:
         key="delete_multiselect"
     )
 
-    # ── All debug output MUST come AFTER the multiselect ─────────────────────
-    st.markdown("**Diagnostic (remove later):**")
-    st.write("Total entries right now:", len(st.session_state.entries))
-    st.write("Selected items:", selected_labels)
-
-    # Show what dates would actually be targeted
-    targeted_dates = []
-    for label in selected_labels:
-        try:
-            date_part = label.split(" | ", 1)[0].strip()
-            targeted_dates.append(date_part if date_part else "EMPTY_STRING")
-        except:
-            targeted_dates.append("PARSE_FAILED")
-    st.write("Targeted date_added values:", targeted_dates)
-
-    # Show real data state
-    sample_dates = [e.get("date_added", "—missing—") for e in st.session_state.entries[:5]]
-    st.write("First 5 date_added in storage:", sample_dates)
-    st.write("Any real date_added present?", any(e.get("date_added") for e in st.session_state.entries))
+    
     # ────────────────────────────────────────────────────────────────────────
 
     if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
