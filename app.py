@@ -64,6 +64,82 @@ if page == "Add Word":
             st.success(f"Added **{entry['word']}** to your Lexicon.")
 
 # ---------- Lexicon View ----------
+elif page == "Lexicon":
+    st.header("Your Lexicon")
+
+    # Filters
+    colf = st.columns([2, 2, 2, 1])
+    with colf[0]:
+        query = st.text_input("Search word/definition/notes")
+    with colf[1]:
+        tag_filter = st.text_input("Filter by tag (exact match)")
+    with colf[2]:
+        source_filter = st.text_input("Filter by source contains")
+    with colf[3]:
+        sort_by = st.selectbox("Sort", ["word", "date_added"], index=0)
+
+    df = st.session_state.df.copy()
+
+    # Apply filters
+    if not df.empty:
+        if query:
+            mask = (
+                df["word"].str.contains(query, case=False, na=False) |
+                df["definition"].str.contains(query, case=False, na=False) |
+                df["notes"].str.contains(query, case=False, na=False)
+            )
+            df = df[mask]
+        if tag_filter:
+            df = df[df["tags"].apply(lambda ts: tag_filter.strip() in (ts or []))]
+        if source_filter:
+            df = df[df["source"].str.contains(source_filter, case=False, na=False)]
+        df = df.sort_values(by=sort_by, ascending=True, na_position="last").reset_index(drop=True)
+
+    # Editable table
+    st.caption("Tip: Double-click cells to edit. Use the ⛔ delete button per row.")
+    edited = st.data_editor(
+        df,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "word": st.column_config.TextColumn("Word"),
+            "definition": st.column_config.TextColumn("Definition"),
+            "notes": st.column_config.TextColumn("Notes"),
+            "tags": st.column_config.ListColumn("Tags"),
+            "source": st.column_config.TextColumn("Source"),
+            "timestamp": st.column_config.TextColumn("Timestamp (hh:mm:ss)"),
+            "date_added": st.column_config.TextColumn("Date Added (UTC)", disabled=True),
+        },
+        key="editor"
+    )
+
+    # Persist edits
+    if st.button("💾 Save Changes", type="primary"):
+        st.session_state.entries = edited.to_dict(orient="records")
+        save_entries(st.session_state.entries)
+        refresh_table()
+        st.success("All changes saved.")
+
+    # Delete selected rows
+    if not edited.empty:
+        to_delete = st.multiselect("Select rows to delete", edited.index.tolist())
+        if st.button("⛔ Delete Selected"):
+            st.session_state.entries = [
+                row for idx, row in edited.iterrows() if idx not in to_delete
+            ]
+            save_entries(st.session_state.entries)
+            refresh_table()
+            st.success(f"Deleted {len(to_delete)} entr{'y' if len(to_delete)==1 else 'ies'}.")
+
+
+# ---------- Settings ----------
+elif page == "Settings":
+    st.header("Settings")
+    st.write("Future options: switch to SQLite backend, theme, larger fonts, and export defaults.")
+    st.info("Data is saved locally on the server where this Streamlit app runs. If you deploy to Streamlit Cloud, consider per-user storage or a database for multi-user scenarios.")
+
+
+# ---------- Lexicon View ----------
 elif page == "Import / Export":
     st.header("Import / Export")
 
