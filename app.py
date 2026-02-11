@@ -189,33 +189,52 @@ elif page == "Lexicon":
 
     # ---------- Row deletion ----------
 # ---------- Row deletion (fixed for Streamlit rerun behavior) ----------
-if not edited.empty:
+# ---------- Row deletion ----------
+st.subheader("Delete entries")
 
-    # Persist the selected rows across reruns
-    if "selected_rows" not in st.session_state:
-        st.session_state.selected_rows = []
+if not st.session_state.df.empty:
+    # Show current table for reference (optional but helpful)
+    st.caption("Current lexicon (for reference):")
+    st.dataframe(st.session_state.df[["word", "definition", "tags", "date_added"]])
 
-    # Multiselect -> store result
-    selected = st.multiselect(
-        "Select rows to delete",
-        edited.index.tolist(),
-        default=st.session_state.selected_rows,
-        key="row_selector"
+    # Let user pick by a readable + stable key
+    options = [
+        f"{row['date_added']} | {row['word'][:40]}"
+        for _, row in st.session_state.df.iterrows()
+    ]
+
+    if "delete_selection" not in st.session_state:
+        st.session_state.delete_selection = []
+
+    selected_labels = st.multiselect(
+        "Select entries to delete (shows date + word preview)",
+        options,
+        default=st.session_state.delete_selection,
+        key="delete_multiselect"
     )
 
-    # Keep session state updated
-    st.session_state.selected_rows = selected
+    if st.button("⛔ Delete Selected", type="primary", key="confirm_delete"):
+        if not selected_labels:
+            st.warning("No entries selected.")
+        else:
+            # Extract the date_added keys we want to keep
+            to_delete_dates = {label.split(" | ")[0] for label in selected_labels}
 
-    # Delete button
-    if st.button("⛔ Delete Selected", key="delete_rows_btn"):
-        remaining = edited.drop(index=st.session_state.selected_rows).reset_index(drop=True)
-        st.session_state.entries = df_to_entries(remaining)
-        save_entries(st.session_state.entries)
-        refresh_table()
+            before_count = len(st.session_state.entries)
 
-        deleted_count = len(st.session_state.selected_rows)
-        st.session_state.selected_rows = []  # clear after delete
-        st.success(f"Deleted {deleted_count} row(s).")   
+            # Filter out matching date_added
+            st.session_state.entries = [
+                e for e in st.session_state.entries
+                if e.get("date_added", "") not in to_delete_dates
+            ]
+
+            deleted_count = before_count - len(st.session_state.entries)
+
+            save_entries(st.session_state.entries)
+            refresh_table()
+
+            st.session_state.delete_selection = []   # clear selection
+            st.success(f"Deleted **{deleted_count}** entr{'y' if deleted_count == 1 else 'ies'}.")
 
 
 # ================================================================
