@@ -269,12 +269,12 @@ elif page == "Import / Export":
     import json
 
     with c1:
-    st.download_button(
-        "⬇️ Download JSON",
-        data=pd.Series(st.session_state.entries).to_json(orient="values"),
-        file_name="lexicon.json",
-        mime="application/json",
-        use_container_width=True
+        st.download_button(
+            "⬇️ Download JSON",
+            data=pd.Series(st.session_state.entries).to_json(orient="values"),
+            file_name="lexicon.json",
+            mime="application/json",
+            use_container_width=True
     )
 
 
