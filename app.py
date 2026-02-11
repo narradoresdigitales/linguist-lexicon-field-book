@@ -238,44 +238,40 @@ if not st.session_state.df.empty:
             # Extract indices from the displayed options
             indices_to_delete = []
             for label in selected_labels:
-                # The options are built from df.iterrows() → index is preserved in order
-                # But safer: find matching row by word + date preview
                 try:
                     date_part, word_part = label.split(" | ", 1)
                     word_part = word_part.strip()
-                    # Find rows that match this preview
+                    # Match on word start + date contains (handles MISSING_DATE too)
                     matching = st.session_state.df[
-                        (st.session_state.df['word'].str.startswith(word_part)) &
+                        (st.session_state.df['word'].str.startswith(word_part, na=False)) &
                         (st.session_state.df.get('date_added', pd.NA).astype(str).str.contains(date_part, na=False))
                     ]
                     indices_to_delete.extend(matching.index.tolist())
-                except:
-                    pass
+                except Exception as e:
+                    st.write("Debug: match error for label:", label, str(e))
 
             if not indices_to_delete:
-                st.error("Could not match selected labels to rows — nothing deleted.")
+                st.error("Could not match selected labels back to rows — nothing deleted.")
             else:
-                indices_to_delete = sorted(set(indices_to_delete))  # unique & ordered
-                st.info(f"Would delete {len(indices_to_delete)} row(s) by index")
+                indices_to_delete = sorted(set(indices_to_delete))  # unique, ordered
+                before = len(st.session_state.entries)
 
-                # Show which words would be affected
+                # Show preview before deleting
                 words = st.session_state.df.loc[indices_to_delete, 'word'].tolist()
-                st.write("Words to be deleted:", words)
+                st.write("Deleting these words:", words)
 
-                # If you're sure → uncomment the next block
-                # before = len(st.session_state.entries)
-                # st.session_state.entries = [
-                #     e for i, e in enumerate(st.session_state.entries)
-                #     if i not in indices_to_delete   # but careful: indices are from df, not entries!
-                # ]
-                # deleted = before - len(st.session_state.entries)
-                # save_entries(st.session_state.entries)
-                # refresh_table()
-                # st.session_state.delete_selection = []
-                # st.success(f"Deleted {deleted} entr{'y' if deleted == 1 else 'ies'}.")
+                # Actual deletion — remove by index in the current df order
+                # (Important: we drop from df first, then rebuild entries from remaining df)
+                remaining_df = st.session_state.df.drop(indices_to_delete)
+                st.session_state.entries = df_to_entries(remaining_df)
 
-                st.warning("Safe mode still active — deletion commented out. Tell me if the words look correct.")
+                deleted = before - len(st.session_state.entries)
 
+                save_entries(st.session_state.entries)
+                refresh_table()
+                st.session_state.delete_selection = []
+
+                st.success(f"Deleted **{deleted}** entr{'y' if deleted == 1 else 'ies'} successfully.")
 
 
 # ================================================================
