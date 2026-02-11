@@ -208,3 +208,86 @@ elif page == "Settings":
     st.header("Settings")
     st.write("Future options: switch to SQLite backend, theme, larger fonts, and export defaults.")
     st.info("Data is saved locally on the server where this Streamlit app runs. If you deploy to Streamlit Cloud, consider per-user storage or a database for multi-user scenarios.")
+
+st.divider()
+    st.subheader("Import from Word (.docx)")
+
+    st.caption("Two modes supported: (1) Glossary Table with headers (word, definition, notes, tags, source, timestamp) or (2) Free Text to harvest candidate words.")
+
+    docx_file = st.file_uploader("Upload a .docx file", type=["docx"], key="up_docx")
+
+    if docx_file is not None:
+        from src.docx_import import load_docx, extract_tables_as_dicts, extract_plain_text, candidate_words_from_text, map_row_to_entry
+
+        default_c1, default_c2 = st.columns([1,1])
+        with default_c1:
+            default_source = st.text_input("Default source (applied to imported entries)", value="")
+        with default_c2:
+            default_tags_str = st.text_input("Default tag(s), comma-separated", value="")
+        default_tags = [t.strip() for t in default_tags_str.split(",") if t.strip()]
+
+        doc = load_docx(docx_file)
+
+        # --- Mode A: Try tables first ---
+        tables = extract_tables_as_dicts(doc)
+        imported_rows = 0
+
+        if tables:
+            st.write("### Detected Tables")
+            for idx, rows in enumerate(tables, start=1):
+                st.markdown(f"**Table {idx}** — {len(rows)} row(s)")
+                preview = rows[:5] if len(rows) > 5 else rows
+                st.json(preview)  # JSON preview helps users see headers/values
+
+            if st.button("📥 Import from Tables"):
+                new_entries = []
+                for rows in tables:
+                    for row in rows:
+                        entry = map_row_to_entry(row, default_tags=default_tags, default_source=default_source)
+                        if entry["word"]:  # must have a word
+                            new_entries.append(entry)
+
+                # De-duplicate against existing words (case-insensitive on 'word')
+                existing_words = { (e.get("word") or "").lower() for e in st.session_state.entries }
+                new_entries = [e for e in new_entries if (e["word"] or "").lower() not in existing_words]
+
+                if new_entries:
+                    st.session_state.entries.extend(new_entries)
+                    save_entries(st.session_state.entries)
+                    st.success(f"Imported {len(new_entries)} entr{'y' if len(new_entries)==1 else 'ies'} from tables.")
+                    imported_rows += len(new_entries)
+                else:
+                    st.info("No new entries were added (duplicates or empty words).")
+
+        # --- Mode B: Fall back to plain text ---
+        text = extract_plain_text(doc)
+        if text and st.checkbox("Use Free Text Mode (parse paragraphs for candidate words)", value=not bool(tables)):
+            st.text_area("Extracted text (preview)", value=text[:2000] + ("..." if len(text) > 2000 else ""), height=200)
+
+            cands = candidate_words_from_text(text)
+            st.write(f"Found **{len(cands)}** unique candidate word(s).")
+            # Filter out words that already exist
+            existing_words = { (e.get("word") or "").lower() for e in st.session_state.entries }
+            fresh = [w for w in cands if w.lower() not in existing_words]
+            st.write(f"New (non-duplicate) candidates: **{len(fresh)}**")
+
+            selected = st.multiselect("Select words to import", options=fresh, default=fresh[:30])
+
+            notes_default = st.text_input("Default notes (optional, applied to selected words)", value="")
+            if st.button("📥 Import Selected Words"):
+                batch = []
+                for w in selected:
+                    entry = {
+                        "word": w,
+                        "definition": "",
+                        "notes": notes_default,
+                        "tags": default_tags,
+                        "source": default_source,
+                        "timestamp": "",
+                        "date_added": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                    }
+                    batch.append(entry)
+                if batch:
+                    st.session_state.entries.extend(batch)
+                    save_entries(st.session_state.entries)
+                    st.success(f"Imported {len(batch)} entr{'y' if len(batch)==1 else 'ies'} from free text.")
