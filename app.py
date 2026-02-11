@@ -277,13 +277,13 @@ elif page == "Import / Export":
 
 
     with c2:
-    df = pd.DataFrame(st.session_state.entries)
-    st.download_button(
-        "⬇️ Download CSV",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name="lexicon.csv",
-        mime="text/csv",
-        use_container_width=True
+        df = pd.DataFrame(st.session_state.entries)
+        st.download_button(
+            "⬇️ Download CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name="lexicon.csv",
+            mime="text/csv",
+            use_container_width=True
     )
 
 
