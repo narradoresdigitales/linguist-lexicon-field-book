@@ -263,30 +263,31 @@ elif page == "Import / Export":
     st.header("Import / Export")
 
     # ------------------ Export ------------------
+# ------------------ Export ------------------
     st.subheader("Export")
-    c1, c2 = st.columns(2)
 
-    import json
+    if st.session_state.entries:
+        import json
+        df = pd.DataFrame(st.session_state.entries)
 
-    with c1:
         st.download_button(
-            "⬇️ Download JSON",
-            data=pd.Series(st.session_state.entries).to_json(orient="values"),
+            label="⬇️ Download JSON",
+            data=json.dumps(st.session_state.entries, indent=2),
             file_name="lexicon.json",
             mime="application/json",
-            use_container_width=True
-    )
+            key="download_json"
+        )
 
-
-    with c2:
-        df = pd.DataFrame(st.session_state.entries)
         st.download_button(
-            "⬇️ Download CSV",
+            label="⬇️ Download CSV",
             data=df.to_csv(index=False).encode("utf-8"),
             file_name="lexicon.csv",
             mime="text/csv",
-            use_container_width=True
-    )
+            key="download_csv"
+        )
+    else:
+        st.info("No entries available to export.")
+
 
 
     # ------------------ Import JSON / CSV ------------------
