@@ -12,7 +12,7 @@ from src.utils import normalize_timestamp
 
 # ---------------------- Page Config ----------------------
 st.set_page_config(
-    page_title="Linguist Lexicon",
+    page_title="Lexicon Field Book",
     page_icon="📘",
     layout="wide"
 )
