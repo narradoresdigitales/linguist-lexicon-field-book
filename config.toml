@@ -1,15 +1,21 @@
-[theme]
+[
+theme
+]
 base = "light"          # or "dark" if you prefer dark by default
 primaryColor = "#4f8bf9"   # optional: your accent color
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f2f6"
 textColor = "#262730"
 
-[theme.dark]
+[
+theme.dark
+]
 backgroundColor = "#0e1117"
 secondaryBackgroundColor = "#262730"
 textColor = "#fafafa"
 
-[theme]
+[
+theme
+]
 baseFontSize = "18px"      # or 1.125rem, 20px, etc. — default is ~16px
 # codeFontSize = "1rem"    # optional: larger code blocks too
